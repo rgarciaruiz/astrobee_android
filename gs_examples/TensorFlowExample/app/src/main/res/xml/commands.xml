@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<apkInfo>
+    <shortName>TensorFlowExample</shortName> <!-- Optional -->
+    <primary>false</primary> <!-- Required -->
+    <commands>
+        <command
+            name="enable_detection"
+            syntax="{&quot;name&quot;: &quot;enable_detection&quot;}" />
+        <command
+            name="disable_detection"
+            syntax="{&quot;name&quot;: &quot;disable_detection&quot;}" />
+        <command
+            name="enable_image_saving"
+            syntax="{&quot;name&quot;: &quot;enable_image_saving&quot;}" />
+        <command
+            name="disable_image_saving"
+            syntax="{&quot;name&quot;: &quot;disable_image_saving&quot;}" />
+    </commands>
+</apkInfo>
