@@ -55,7 +55,9 @@ import java.io.FileOutputStream;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.Callable;
@@ -149,12 +151,18 @@ public class CameraController {
     private final CaptureStateCallback mCaptureStateCallback = new CaptureStateCallback();
 
     private float mFocusDistance = 0.39f;
+    private float mFocusDistanceFunctionCoefficient = 1.6f;
+    private float mFocusDistanceFunctionExponent = -1.41f;
 
     private Handler mCaptureHandler = null;
 
     private final HandlerThread mCaptureThread = new HandlerThread("CaptureThread");
 
     private ImageReader mReader = null;
+
+    private int mNumImagesToDiscard = 0;
+
+    private int mNumDiscardImagesWhenChangingFocus = 3;
 
     private long mAverageTimeBetweenImages = 1700;
     private long mCaptureCompleteTimestamp;
@@ -248,6 +256,34 @@ public class CameraController {
 
         // This is the max size jpeg that the camera can capture
         mCaptureSize = new Size(5344, 4008);
+
+    }
+
+    // Lab tested distance to focal distance values
+    // 0.2  --> 15.0
+    // 0.25 --> 11.5
+    // 0.28 --> 10.0
+    // 0.3  -->  9.0
+    // 0.35 -->  6.5
+    // 0.4  -->  5.5
+    // 0.5  -->  4.5
+    // 0.6  -->  3.25
+
+    public void startManualFocusCapture(float hazCamDistance) {
+        // Function found using lab data. For more information, see:
+        // https://babelfish.arc.nasa.gov/confluence/display/astrosoft/ISAAC+Close-up+Inspection?focusedTaskId=251
+        float newFocusDistance = (float) (mFocusDistanceFunctionCoefficient * Math.pow(hazCamDistance, mFocusDistanceFunctionExponent));
+        Log.d(StartSciCamImage.TAG, "startManualFocusCapture: Haz cam distance: " + hazCamDistance);
+        Log.d(StartSciCamImage.TAG, "startManualFocusCapture: Calculated focus distance: " + newFocusDistance);
+        // Make sure the focus mode is set to manual and the focus distance is set correctly
+        if (newFocusDistance != mFocusDistance || mFocusMode != "manual") {
+            // Set focus mode
+            setFocusMode("manual");
+            // Set focus distance
+            setFocusDistance(newFocusDistance);
+            mNumImagesToDiscard = mNumDiscardImagesWhenChangingFocus;
+        }
+        captureImage();
     }
 
     public void captureImage() {
@@ -317,7 +353,7 @@ public class CameraController {
         return mContinuousPictureTaking;
     }
 
-    public File getOutputDataFile() {
+    public File getOutputDataFile(long imageTimestamp) {
         File dataStorageDir = new File(mDataPath);
 
         if (dataStorageDir == null) {
@@ -332,8 +368,8 @@ public class CameraController {
             }
         }
 
-        long secs = mCaptureCompleteTimestamp/1000;
-        long msecs = mCaptureCompleteTimestamp % 1000;
+        long secs = imageTimestamp/1000;
+        long msecs = imageTimestamp % 1000;
         String timestamp = String.format("%d.%03d", secs, msecs);
         return new File(dataStorageDir + File.separator + timestamp + ".jpg");
     }
@@ -370,41 +406,52 @@ public class CameraController {
             public void onImageAvailable(ImageReader reader) {
                 final Image image = reader.acquireLatestImage();
                 Date date = new Date();
-                long imageTimestamp = (date.getTime() - SystemClock.uptimeMillis()) + image.getTimestamp();
+                // The image get timestamp function returns the nanoseconds since boot time of the
+                // device
+                long imageTimestamp = (date.getTime() - SystemClock.uptimeMillis()) + (image.getTimestamp() / 1000000);
                 Log.d(StartSciCamImage.TAG, "onImageAvailable: Capture complete timestamp: " + mCaptureCompleteTimestamp);
-                Log.d(StartSciCamImage.TAG, "onImageAvailable: Image timestamp: " + imageTimestamp);
+                Log.d(StartSciCamImage.TAG, "onImageAvailable: Image timestamp used: " + imageTimestamp);
 
                 ByteBuffer buffer = image.getPlanes()[0].getBuffer();
                 byte[] bytes = new byte[buffer.remaining()];
                 buffer.get(bytes);
 
-                Size imageSize = new Size(image.getWidth(), image.getHeight());
+                // Check to see if we are discarding images. If so, discard the image and start a
+                // new image capture
+                if (mNumImagesToDiscard <= 0) {
+                    Size imageSize = new Size(image.getWidth(), image.getHeight());
 
-                mSciCamPublisher.publishImage(bytes, imageSize, mCaptureCompleteTimestamp);
-
-                if (mSaveImage) {
-                    // Image file
-                    File imageFile = getOutputDataFile();
-                    FileOutputStream outputStream = null;
-                    if (imageFile != null) {
-                        try {
-                            Log.d(StartSciCamImage.TAG, "onImageAvailable: Writing image to file: " + imageFile);
-                            outputStream = new FileOutputStream(imageFile);
-                            outputStream.write(bytes);
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                            Log.e(StartSciCamImage.TAG, "onImageAvailable: Error saving image!", e);
-                        } finally {
-                            if (outputStream != null) {
-                                try {
-                                    outputStream.close();
-                                } catch (Exception e) {
-                                    e.printStackTrace();
-                                    Log.d(StartSciCamImage.TAG, "onImageAvailable: Error closing output stream!", e);
+                    if (mSaveImage) {
+                        // Image file
+                        File imageFile = getOutputDataFile(imageTimestamp);
+                        FileOutputStream outputStream = null;
+                        if (imageFile != null) {
+                            try {
+                                Log.d(StartSciCamImage.TAG, "onImageAvailable: Writing image to file: " + imageFile);
+                                Log.d(StartSciCamImage.TAG, "onImageAvailable: Focus Distance " + mFocusDistance + "  exponent: "
+                                        + mFocusDistanceFunctionExponent + " coefficient " + mFocusDistanceFunctionCoefficient
+                                        + " used to take image " + imageFile);
+                                outputStream = new FileOutputStream(imageFile);
+                                outputStream.write(bytes);
+                            } catch (Exception e) {
+                                e.printStackTrace();
+                                Log.e(StartSciCamImage.TAG, "onImageAvailable: Error saving image!", e);
+                            } finally {
+                                if (outputStream != null) {
+                                    try {
+                                        outputStream.close();
+                                    } catch (Exception e) {
+                                        e.printStackTrace();
+                                        Log.d(StartSciCamImage.TAG, "onImageAvailable: Error closing output stream!", e);
+                                    }
                                 }
                             }
                         }
                     }
+                    // Publishing the camera info/image triggers the inspection node to send another
+                    // take image command. Writing the image to a file takes longer than it does to
+                    // receive this command so need to publish the image after writing it to a file.
+                    mSciCamPublisher.publishImage(bytes, imageSize, imageTimestamp);
                 }
 
                 Log.d(StartSciCamImage.TAG, "onImageAvailable: Closing image!");
@@ -412,8 +459,12 @@ public class CameraController {
                 image.close();
                 mCaptureTimeoutTimer.cancel();
                 mCameraInUse = false;
-                if (mContinuousPictureTaking) {
+                if (mContinuousPictureTaking || mNumImagesToDiscard > 0) {
                     captureImage();
+                    if (mNumImagesToDiscard > 0) {
+                        mNumImagesToDiscard -= 1;
+                        Log.d(StartSciCamImage.TAG, "onImageAvailable: " + mNumImagesToDiscard + " still need to be discarded.");
+                    }
                 }
             }
         }, mCaptureHandler);
@@ -495,10 +546,22 @@ public class CameraController {
             Log.d(StartSciCamImage.TAG, "openCamera: YUV_420_888 supported: " + map.isOutputSupportedFor(ImageFormat.YUV_420_888));
             Log.d(StartSciCamImage.TAG, "openCamera: JPEG supported: " + map.isOutputSupportedFor(ImageFormat.JPEG));
             Log.d(StartSciCamImage.TAG, "openCamera: RAW sensor supported: " + map.isOutputSupportedFor(ImageFormat.RAW_SENSOR));
+            Log.d(StartSciCamImage.TAG, "openCamera: 10-bit raw format supported: " + map.isOutputSupportedFor(ImageFormat.RAW10));
+            Log.d(StartSciCamImage.TAG, "openCamera: 12-bit raw format supported: " + map.isOutputSupportedFor(ImageFormat.RAW12));
 
-            Size[] outputSizes = map.getOutputSizes(ImageFormat.JPEG);
-            for (int i = 0; i < outputSizes.length; i++) {
-                Log.d(StartSciCamImage.TAG, "openCamera: output size option " + i + ": width: " + outputSizes[i].getWidth() + " height: " + outputSizes[i].getHeight());
+            int[] outputFormats = map.getOutputFormats();
+            for (int i = 0; i < outputFormats.length; i++) {
+                Log.d(StartSciCamImage.TAG, "openCamera: output format " + outputFormats[i]);
+            }
+
+            Size[] outputSizesJpeg = map.getOutputSizes(ImageFormat.JPEG);
+            for (int i = 0; i < outputSizesJpeg.length; i++) {
+                Log.d(StartSciCamImage.TAG, "openCamera: output size option JPEG: " + i + ": width: " + outputSizesJpeg[i].getWidth() + " height: " + outputSizesJpeg[i].getHeight());
+            }
+
+            Size[] outputSizesRaw = map.getOutputSizes(ImageFormat.RAW10);
+            for (int i = 0; i < outputSizesRaw.length; i++) {
+                Log.d(StartSciCamImage.TAG, "openCamera: output size option raw 10: " + i + ": width: " + outputSizesRaw[i].getWidth() + " height: " + outputSizesRaw[i].getHeight());
             }
 
             // Check if flash is supported
@@ -587,6 +650,11 @@ public class CameraController {
             return false;
         }
         return true;
+    }
+
+    public void setFocusDistanceFunctionValues(float exponentIn, float coefficientIn) {
+        mFocusDistanceFunctionExponent = exponentIn;
+        mFocusDistanceFunctionCoefficient = coefficientIn;
     }
 
     public boolean setFocusMode(String focusMode) {

@@ -95,8 +95,21 @@ public class StartSciCamImage extends StartGuestScienceService {
                         // aren't continuously taking pictures
                         if (!mCameraController.getCameraInUse() &&
                                 !mCameraController.getContinuousPictureTaking()) {
-                            mCameraController.captureImage();
-                            commandResult += "\"Capture request sent to the camera!\"}";
+                            // Check to see if the haz distance is valid. If it is, we may need to
+                            // set the focal distance. If it isn't, we can just take the picture.
+                            if (obj.has("haz_dist")) {
+                                float hazCamDistance = (float) obj.getDouble("haz_dist");
+                                if (hazCamDistance > 0) {
+                                    mCameraController.startManualFocusCapture(hazCamDistance);
+                                    commandResult += "\"Started manual focus capture!\"}";
+                                } else {
+                                    mCameraController.captureImage();
+                                    commandResult += "\"Capture request sent to the camera!\"}";
+                                }
+                            } else {
+                                mCameraController.captureImage();
+                                commandResult += "\"Capture request sent to the camera!\"}";
+                            }
                         } else {
                             commandResult += "\"Error: Camera is in use!\"}";
                         }
@@ -226,6 +239,18 @@ public class StartSciCamImage extends StartGuestScienceService {
                         }
                     } else {
                         commandResult += "Error: Save argument not provided in the set save pictures to disk command.\"}";
+                    }
+                    break;
+                case "setFocusDistanceFunctionValues":
+                    Log.d(TAG, "Received set focal distance function command.");
+                    if (obj.has("exponent") && obj.has("coefficient")) {
+                        float exponent = (float)obj.getDouble("exponent");
+                        float coefficient = (float)obj.getDouble("coefficient");
+                        mCameraController.setFocusDistanceFunctionValues(exponent, coefficient);
+                        commandResult += "Focus Distance function exponent set to " + exponent;
+                        commandResult += " and coefficient set to " + coefficient + "!\"}";
+                    } else {
+                        commandResult += "Error: Exponent and/or coefficient not provided in the set focal distance function values command.\"}";
                     }
                     break;
                 default:

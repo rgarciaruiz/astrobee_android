@@ -5,7 +5,9 @@ pictures with the science camera.
 
 The pictures are published on the `/hw/cam_sci/compressed` topic via
 ROS at reduced resolution (default: 640x480). The image dimensions for
-the published image is published on the `/hw/cam_sci_info` topic.
+the published image is published on the `/hw/cam_sci_info` topic. This message
+is published every time an image is taken regardless of if the image is
+published or not and it contains the timestamp the image was taken.
 
 The full-resolution images (at 5344x4008 pixels) are saved locally on
 HLP in directory:
@@ -114,6 +116,7 @@ please see the next section.
     7) gs -cmd SciCamImage '{"name": "setPublishedImageSize", "width": 640, "height": 480}'
     8) gs -cmd SciCamImage '{"name": "setPublishedImageType", "type": "color"}'
     9) gs -cmd SciCamImage '{"name": "setSavePicturesToDisk", "save": true}'
+    10) gs -cmd SciCamImage '{"name": "setFocusDistanceFunctionValues", "exponent": -1.41, "coefficient": 1.6}'
 
 To stop the apk, run this line in the gds helper:
 
@@ -192,6 +195,11 @@ If the guest science manager is not behaving, one can use the option
     If this is set to true, the apk will write captured images to disk on the
     HLP at full resolution. The directory where they are written was mentioned
     in an earlier section. By default, the images are saved to disk.
+
+10. Set focus distance function values
+
+    Modifies the function used to calcute the focal distance based on the haz
+    cam distance. It requires a value for both the exponent and coefficient.
 
 ## Fetching the data
 
