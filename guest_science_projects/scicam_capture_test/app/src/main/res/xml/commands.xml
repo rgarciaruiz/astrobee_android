@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<apkInfo>
+    <shortName>scicam_capture</shortName> <!-- Optional -->
+    <primary>false</primary> <!-- Required -->
+<!--    <commands>-->
+<!--        <command-->
+<!--            name="Set Resolution"-->
+<!--            syntax="{&quot;name&quot;: &quot;backUI&quot;}" />-->
+<!--    </commands>-->
+</apkInfo>

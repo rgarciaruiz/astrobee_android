@@ -1,0 +1,90 @@
+plugins {
+    alias(libs.plugins.android.application)
+}
+
+android {
+    namespace 'gov.nasa.astrobee.scicam_capture_test'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "gov.nasa.astrobee.scicam_capture_test"
+        minSdk 25
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+// Rosjava dependencies are broken. This overrides with newer ones.
+def commonsSubstitutions = [
+        "httpclient:3.1.0"  : "commons-httpclient:commons-httpclient:3.1",
+        "logging:1.1.1"     : "commons-logging:commons-logging:1.1.1",
+        "codec:1.3.0"       : "commons-codec:commons-codec:1.3",
+        "io:1.4.0"          : "commons-io:commons-io:1.4",
+        "lang:2.4.0"        : "commons-lang:commons-lang:2.4",
+        "net:2.0.0"         : "commons-net:commons-net:2.0"
+]
+configurations.all {
+    resolutionStrategy.dependencySubstitution {
+        commonsSubstitutions.each { oldDependency, newDependency ->
+            substitute module("org.apache.commons:com.springsource.org.apache.commons.${oldDependency}") using module(newDependency)
+        }
+    }
+}
+
+dependencies {
+    implementation libs.appcompat
+    implementation libs.material
+    implementation libs.activity
+    implementation libs.constraintlayout
+    testImplementation libs.junit
+    androidTestImplementation libs.ext.junit
+    androidTestImplementation libs.espresso.core
+
+    def camerax_version = "1.2.2"
+    implementation "androidx.camera:camera-core:${camerax_version}"
+    implementation "androidx.camera:camera-camera2:${camerax_version}"
+    implementation "androidx.camera:camera-lifecycle:${camerax_version}"
+    implementation "androidx.camera:camera-video:${camerax_version}"
+    implementation "androidx.camera:camera-view:${camerax_version}"
+    implementation "androidx.camera:camera-extensions:${camerax_version}"
+    implementation "androidx.lifecycle:lifecycle-service:2.8.7"
+
+    implementation project(':guest_science_library')
+
+    // Guava from ROS conflicts with listenablefuture
+    // Manually bring a guava version that does not conflict
+    implementation "com.google.guava:guava:32.0.0-jre"
+
+    implementation('org.ros.rosjava_core:rosjava:0.3.6') {
+        exclude group: 'xml-apis'
+        exclude group: 'junit'
+        // Excluding guava since it was added before
+        exclude group: 'com.google.guava'
+    }
+    // Cannot use a newer version.
+    // Newer versions use AppCompat v7 which conflicts with AndroidX compat
+    // AndroidX compat is required for CameraX
+    implementation('org.ros.android_core:android_10:0.2.1') {
+        exclude group: 'xml-apis'
+        exclude group: 'junit'
+        exclude group: 'com.google.guava'
+        // AppCompat from rosandroid conflicts with newer versions
+        //exclude group: 'com.android.support'
+    }
+    implementation 'org.ros.rosjava_bootstrap:message_generation:0.3.3'
+    implementation 'org.ros.rosjava_messages:std_msgs:0.5.10'
+}
